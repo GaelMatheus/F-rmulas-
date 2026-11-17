@@ -60,3 +60,47 @@ body[data-subject="biologia"]{--accent:#72a943;--accent-dark:#56852d;--accent-so
 
 .backup-panel{margin-top:28px;padding:22px;background:#fff;border:1px solid var(--line);border-radius:17px;box-shadow:0 8px 25px rgba(35,30,70,.035)}.backup-panel h2{font:900 19px Arial,sans-serif;margin:0 0 8px}.backup-panel p{font-size:11px;line-height:1.65;color:#858293;max-width:620px}.backup-panel>small{display:block;margin-top:12px;color:#aaa;font-size:9px}.backup-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:15px}.backup-actions .primary-btn{width:auto;margin:0}.secondary-btn{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:11px;padding:13px 18px;font-size:11px;font-weight:900}.secondary-btn:hover{border-color:var(--accent);color:var(--accent)}
 @media(max-width:560px){.backup-panel{padding:16px}.backup-actions{display:grid}.backup-actions .primary-btn,.backup-actions .secondary-btn{width:100%}}
+
+
+/* V11 — refinamento exclusivo para telas pequenas */
+@media (max-width:560px){
+  /* Mantém o acesso ao menu, mas remove a marca "fórmula." do cabeçalho. */
+  .mobile-brand{
+    width:34px; min-width:34px; height:38px; padding:0;
+    justify-content:center; border-radius:11px;
+    background:#f5f4fb; color:#77748c; font-size:18px;
+  }
+  .mobile-brand b{display:none!important}
+
+  /* O seletor de matéria passa a ser o elemento de destaque do cabeçalho. */
+  .topbar{justify-content:flex-start; gap:9px; overflow:visible}
+  .subject-switcher-wrap{position:relative; flex:1; min-width:0; max-width:230px}
+  .subject-switcher{
+    width:100%; min-width:0; min-height:46px; padding:6px 11px; gap:9px;
+    border:1px solid color-mix(in srgb,var(--accent) 20%,#e9e7f1);
+    border-radius:15px; background:linear-gradient(135deg,#fff 0%,var(--accent-pale) 100%);
+    box-shadow:0 4px 13px rgba(35,30,70,.07);
+  }
+  .subject-emoji{width:33px;height:33px;flex:0 0 33px;border-radius:11px}
+  .switcher-text{min-width:0;gap:3px}
+  .switcher-text small{font-size:7px;letter-spacing:1.05px;color:var(--accent);font-weight:900}
+  .switcher-text strong{font-size:12px;line-height:1.1}
+  .switch-chevron{display:block;margin-left:auto;color:var(--accent);font-size:15px}
+  .subject-dropdown{top:54px;left:0;right:auto;width:min(290px,calc(100vw - 34px));z-index:80}
+  .top-stats{margin-left:auto;gap:8px}
+
+  /* Mascote mais deslocado para dentro da tela, sem mexer no desktop. */
+  .welcome-row .mascot{
+    margin-right:15px; width:94px; flex:0 0 94px;
+    transform:scale(.86) translateX(-7px); transform-origin:center right;
+  }
+
+  /* Barra flutuante ligeiramente elevada, deixando uma faixa branca inferior. */
+  .main-content{padding-bottom:calc(112px + env(safe-area-inset-bottom))}
+  .mobile-bottom-nav{
+    left:10px; right:10px; bottom:calc(12px + env(safe-area-inset-bottom));
+    padding:8px 8px; min-height:64px;
+    border:1px solid rgba(235,233,243,.95); border-radius:18px;
+    box-shadow:0 8px 28px rgba(35,30,70,.13);
+  }
+}
