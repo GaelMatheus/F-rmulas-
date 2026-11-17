@@ -91,3 +91,22 @@ window.addEventListener('online',updateOfflineStatus);window.addEventListener('o
 if('serviceWorker' in navigator && location.protocol!=='file:'){window.addEventListener('load',()=>{navigator.serviceWorker.register('./service-worker.js').then(reg=>{updateOfflineStatus();navigator.serviceWorker.ready.then(updateOfflineStatus);reg.addEventListener('updatefound',()=>{const worker=reg.installing;if(worker)worker.addEventListener('statechange',()=>{if(worker.state==='activated')updateOfflineStatus()})});navigator.serviceWorker.addEventListener('controllerchange',updateOfflineStatus)}).catch(()=>{const el=$('#offlineStatus');if(el){el.querySelector('span:last-child').textContent='Offline não configurado';el.classList.add('is-offline')}})});}
 if(navigator.storage?.persist){navigator.storage.persist().catch(()=>false)}
 const savedSubject=localStorage.getItem('formula-subject')||'matematica';subject(subjects[savedSubject]?savedSubject:'matematica');updateStats();
+
+
+// Comportamento visual da tela de acesso. A autenticação real será conectada ao Supabase na próxima etapa.
+(function setupAuthLayout(){
+ const screen=document.getElementById('authScreen');
+ if(!screen)return;
+ const tabs=[...screen.querySelectorAll('[data-auth-tab]')];
+ const loginForm=document.getElementById('loginForm');
+ const signupForm=document.getElementById('signupForm');
+ const feedback=document.getElementById('authFeedback');
+ function setTab(tab){
+  tabs.forEach(button=>{const active=button.dataset.authTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active))});
+  loginForm.hidden=tab!=='login';signupForm.hidden=tab!=='signup';feedback.textContent='';feedback.className='auth-feedback';
+  document.getElementById('authTitle').innerHTML=tab==='login'?'Que bom ter você<br><em>de volta.</em>':'Seu próximo nível<br><em>começa aqui.</em>';
+ }
+ tabs.forEach(button=>button.addEventListener('click',()=>setTab(button.dataset.authTab)));
+ loginForm.addEventListener('submit',event=>{event.preventDefault();feedback.className='auth-feedback';feedback.textContent='A tela está pronta! Na próxima etapa vamos conectar o login ao Supabase. Nenhuma conta foi acessada ainda.';});
+ signupForm.addEventListener('submit',event=>{event.preventDefault();const password=document.getElementById('signupPassword').value;const confirm=document.getElementById('signupPasswordConfirm').value;if(password!==confirm){feedback.className='auth-feedback';feedback.textContent='As senhas não coincidem. Confira os dois campos.';document.getElementById('signupPasswordConfirm').focus();return;}if(password.length<6){feedback.className='auth-feedback';feedback.textContent='Use uma senha com pelo menos 6 caracteres.';return;}feedback.className='auth-feedback';feedback.textContent='Layout validado! Na próxima etapa vamos cadastrar sua conta no Supabase. Nenhuma conta foi criada ainda.';});
+})();
