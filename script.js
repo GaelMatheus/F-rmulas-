@@ -93,20 +93,113 @@ if(navigator.storage?.persist){navigator.storage.persist().catch(()=>false)}
 const savedSubject=localStorage.getItem('formula-subject')||'matematica';subject(subjects[savedSubject]?savedSubject:'matematica');updateStats();
 
 
-// Comportamento visual da tela de acesso. A autenticação real será conectada ao Supabase na próxima etapa.
-(function setupAuthLayout(){
+// Autenticação do Fórmula com Supabase Auth.
+// A chave publishable é própria para uso no navegador; nunca colocar a secret key aqui.
+(function setupSupabaseAuth(){
  const screen=document.getElementById('authScreen');
  if(!screen)return;
- const tabs=[...screen.querySelectorAll('[data-auth-tab]')];
+ const appShell=document.querySelector('.app-shell');
+ const mobileNav=document.getElementById('mobileBottomNav');
+ const feedback=document.getElementById('authFeedback');
  const loginForm=document.getElementById('loginForm');
  const signupForm=document.getElementById('signupForm');
- const feedback=document.getElementById('authFeedback');
+ const tabs=[...screen.querySelectorAll('[data-auth-tab]')];
+ const SUPABASE_URL='https://bugxqziosulqvriplrcf.supabase.co';
+ const SUPABASE_PUBLISHABLE_KEY='sb_publishable_tqTJfh5HlY1NV09AuBWJ-g_Revu-iG_';
+ const supabaseLib=window.supabase;
+ let client=null;
+
+ function showFeedback(message,type='info'){
+  feedback.textContent=message;
+  feedback.className='auth-feedback'+(type==='error'?' is-error':type==='success'?' is-success':'');
+ }
  function setTab(tab){
   tabs.forEach(button=>{const active=button.dataset.authTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active))});
-  loginForm.hidden=tab!=='login';signupForm.hidden=tab!=='signup';feedback.textContent='';feedback.className='auth-feedback';
+  loginForm.hidden=tab!=='login';signupForm.hidden=tab!=='signup';
+  feedback.textContent='';feedback.className='auth-feedback';
   document.getElementById('authTitle').innerHTML=tab==='login'?'Que bom ter você<br><em>de volta.</em>':'Seu próximo nível<br><em>começa aqui.</em>';
  }
+ function setBusy(form,busy,label){
+  const button=form.querySelector('button[type="submit"]');
+  if(!button)return;
+  if(busy){button.dataset.originalText=button.innerHTML;button.disabled=true;button.textContent=label}
+  else{button.disabled=false;if(button.dataset.originalText)button.innerHTML=button.dataset.originalText}
+ }
+ function enterApp(){screen.hidden=true;if(appShell)appShell.hidden=false;if(mobileNav)mobileNav.hidden=false;}
+ function requireLogin(){screen.hidden=false;if(appShell)appShell.hidden=true;if(mobileNav)mobileNav.hidden=true;}
+ function friendlyError(error){
+  const message=(error?.message||'').toLowerCase();
+  if(message.includes('invalid login credentials'))return 'E-mail ou senha incorretos. Confira os dados e tente novamente.';
+  if(message.includes('email not confirmed'))return 'Confirme seu e-mail pelo link enviado antes de entrar.';
+  if(message.includes('user already registered'))return 'Este e-mail já possui uma conta. Entre ou use outro e-mail.';
+  if(message.includes('password should be at least'))return 'A senha precisa ter pelo menos 8 caracteres.';
+  if(message.includes('rate limit'))return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
+  return error?.message||'Não foi possível concluir. Verifique sua conexão e tente novamente.';
+ }
  tabs.forEach(button=>button.addEventListener('click',()=>setTab(button.dataset.authTab)));
- loginForm.addEventListener('submit',event=>{event.preventDefault();feedback.className='auth-feedback';feedback.textContent='A tela está pronta! Na próxima etapa vamos conectar o login ao Supabase. Nenhuma conta foi acessada ainda.';});
- signupForm.addEventListener('submit',event=>{event.preventDefault();const password=document.getElementById('signupPassword').value;const confirm=document.getElementById('signupPasswordConfirm').value;if(password!==confirm){feedback.className='auth-feedback';feedback.textContent='As senhas não coincidem. Confira os dois campos.';document.getElementById('signupPasswordConfirm').focus();return;}if(password.length<6){feedback.className='auth-feedback';feedback.textContent='Use uma senha com pelo menos 6 caracteres.';return;}feedback.className='auth-feedback';feedback.textContent='Layout validado! Na próxima etapa vamos cadastrar sua conta no Supabase. Nenhuma conta foi criada ainda.';});
+
+ if(!supabaseLib?.createClient){
+  requireLogin();showFeedback('Não foi possível carregar o serviço de autenticação. Conecte-se à internet e atualize a página.','error');return;
+ }
+ client=supabaseLib.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{
+  auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
+ });
+
+ loginForm.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const email=document.getElementById('loginEmail').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  setBusy(loginForm,true,'Entrando...');showFeedback('');
+  try{
+   const {error}=await client.auth.signInWithPassword({email,password});
+   if(error)throw error;
+   showFeedback('Login realizado! Abrindo o Fórmula...','success');
+  }catch(error){showFeedback(friendlyError(error),'error')}
+  finally{setBusy(loginForm,false)}
+ });
+
+ signupForm.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const name=document.getElementById('signupName').value.trim();
+  const email=document.getElementById('signupEmail').value.trim();
+  const password=document.getElementById('signupPassword').value;
+  const confirm=document.getElementById('signupPasswordConfirm').value;
+  if(password!==confirm){showFeedback('As senhas não coincidem. Confira os dois campos.','error');document.getElementById('signupPasswordConfirm').focus();return;}
+  if(password.length<8){showFeedback('Use uma senha com pelo menos 8 caracteres.','error');return;}
+  setBusy(signupForm,true,'Criando conta...');showFeedback('');
+  try{
+   const redirectTo=window.location.origin+window.location.pathname;
+   const {data,error}=await client.auth.signUp({
+    email,password,
+    options:{emailRedirectTo:redirectTo,data:{full_name:name}}
+   });
+   if(error)throw error;
+   if(data.session){showFeedback('Conta criada! Abrindo o Fórmula...','success')}
+   else{showFeedback('Cadastro iniciado! Enviamos um link de confirmação para seu e-mail. Confirme o endereço e depois volte aqui para entrar.','success');setTab('login');document.getElementById('loginEmail').value=email;}
+  }catch(error){showFeedback(friendlyError(error),'error')}
+  finally{setBusy(signupForm,false)}
+ });
+
+ // Verifica a sessão salva neste dispositivo. Sem sessão válida, mantém a tela de acesso.
+ requireLogin();
+ client.auth.getSession().then(({data,error})=>{
+  if(error){showFeedback('Não foi possível verificar sua sessão. Tente atualizar a página.','error');return;}
+  if(data.session)enterApp();
+ }).catch(()=>showFeedback('Não foi possível conectar ao Supabase. Verifique sua internet.','error'));
+ client.auth.onAuthStateChange((event,session)=>{
+  if(session && ['SIGNED_IN','TOKEN_REFRESHED','INITIAL_SESSION','USER_UPDATED'].includes(event))enterApp();
+  if(event==='SIGNED_OUT')requireLogin();
+ });
+
+ // O botão de perfil também oferece uma saída explícita da conta.
+ const profileButton=document.getElementById('profileButton');
+ if(profileButton){profileButton.onclick=async()=>{
+  if(!client)return;
+  const {data}=await client.auth.getSession();
+  if(!data.session){requireLogin();return;}
+  if(window.confirm('Deseja sair da sua conta do Fórmula neste dispositivo?')){
+   const {error}=await client.auth.signOut();
+   if(error)showFeedback(friendlyError(error),'error');
+  }
+ };}
 })();
