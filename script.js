@@ -6,7 +6,17 @@ const read=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{retur
 let progress=read('formula-progress',{completed:[],xp:0,streak:0,attempts:0,correct:0});
 // Cada matéria mantém seu próprio progresso; o progresso antigo de Matemática é preservado.
 function loadSubjectProgress(k){const fallback=k==='matematica'?read('formula-progress',{completed:[],xp:0,streak:0,attempts:0,correct:0}):{completed:[],xp:0,streak:0,attempts:0,correct:0};progress=read(`formula-progress-${k}`,fallback);progress.completed=(progress.completed||[]).map(x=>typeof x==='number'?`m1l${x}`:x);}
-function saveProgress(){save(`formula-progress-${activeSubject}`,progress);if(activeSubject==='matematica')save('formula-progress',progress)}
+function saveProgress(){save(`formula-progress-${activeSubject}`,progress);if(activeSubject==='matematica')save('formula-progress',progress);markLocalProgressChanged()}
+
+// Persistência offline + sincronização por conta. O navegador continua sendo a
+// fonte imediata de leitura; o Supabase recebe as alterações quando há conexão.
+const FORMULA_SUBJECTS=['matematica','quimica','fisica','biologia'];
+const EMPTY_PROGRESS=()=>({completed:[],xp:0,streak:0,attempts:0,correct:0});
+function markLocalProgressChanged(){try{localStorage.setItem('formula-local-updated-at',new Date().toISOString())}catch{};if(window.formulaSync)window.formulaSync.schedule()}
+function readAllFormulaProgress(){const data={};for(const key of FORMULA_SUBJECTS){const fallback=key==='matematica'?read('formula-progress',EMPTY_PROGRESS()):EMPTY_PROGRESS();data[key]=read(`formula-progress-${key}`,fallback)}return data}
+function writeAllFormulaProgress(data){for(const key of FORMULA_SUBJECTS){const value=data?.[key]||EMPTY_PROGRESS();save(`formula-progress-${key}`,value);if(key==='matematica')save('formula-progress',value)}}
+function mergeFormulaProgress(local,remote){const merged={};for(const key of FORMULA_SUBJECTS){const a=local?.[key]||EMPTY_PROGRESS(),b=remote?.[key]||EMPTY_PROGRESS();merged[key]={completed:[...new Set([...(a.completed||[]),...(b.completed||[])])],xp:Math.max(a.xp||0,b.xp||0),streak:Math.max(a.streak||0,b.streak||0),attempts:Math.max(a.attempts||0,b.attempts||0),correct:Math.max(a.correct||0,b.correct||0)}}return merged}
+
 function lessonsFor(moduleId){return currentLessonsData.filter(l=>l.moduleId===moduleId)}
 function lessonKey(moduleId,lessonIndex){return `m${moduleId}l${lessonIndex}`}
 function moduleDone(moduleId){const ls=lessonsFor(moduleId);return ls.length>0&&ls.every((_,i)=>progress.completed.includes(lessonKey(moduleId,i)))}
@@ -74,7 +84,7 @@ function renderPracticeQuestion(){
 function recordPracticeResult(key,correct){
  const oldActive=activeSubject,oldProgress=progress;
  const fallback=key==='matematica'?read('formula-progress',{completed:[],xp:0,streak:0,attempts:0,correct:0}):{completed:[],xp:0,streak:0,attempts:0,correct:0};
- const p=read(`formula-progress-${key}`,fallback);p.attempts=(p.attempts||0)+1;if(correct){p.correct=(p.correct||0)+1;p.xp=(p.xp||0)+10}save(`formula-progress-${key}`,p);if(key==='matematica')save('formula-progress',p);
+ const p=read(`formula-progress-${key}`,fallback);p.attempts=(p.attempts||0)+1;if(correct){p.correct=(p.correct||0)+1;p.xp=(p.xp||0)+10}save(`formula-progress-${key}`,p);if(key==='matematica')save('formula-progress',p);markLocalProgressChanged();
  activeSubject=oldActive;progress=key===oldActive?p:oldProgress;updateStats();
 }
 function checkPracticeAnswer(){
@@ -94,6 +104,18 @@ if(navigator.storage?.persist){navigator.storage.persist().catch(()=>false)}
 const savedSubject=localStorage.getItem('formula-subject')||'matematica';subject(subjects[savedSubject]?savedSubject:'matematica');updateStats();
 
 
+// Sincronizador: cada usuário possui uma linha própria na tabela formula_progress.
+window.formulaSync={client:null,user:null,timer:null,running:false,
+ schedule(){clearTimeout(this.timer);this.timer=setTimeout(()=>this.sync(),900)},
+ async connect(client,user){this.client=client;this.user=user;if(!user)return;const owner=localStorage.getItem('formula-owner-id');if(owner&&owner!==user.id){FORMULA_SUBJECTS.forEach(k=>localStorage.removeItem(`formula-progress-${k}`));localStorage.removeItem('formula-progress');localStorage.removeItem('formula-local-updated-at')}
+  // Sem marcador anterior, os dados locais existentes são migrados para a primeira conta usada neste aparelho.
+  localStorage.setItem('formula-owner-id',user.id);await this.sync();},
+ async sync(){if(this.running||!this.client||!this.user||!navigator.onLine)return;this.running=true;try{const userId=this.user.id;const local=readAllFormulaProgress();const {data:row,error:readError}=await this.client.from('formula_progress').select('data,updated_at').eq('user_id',userId).maybeSingle();if(readError)throw readError;let merged=local;if(row?.data){merged=mergeFormulaProgress(local,row.data);}
+   writeAllFormulaProgress(merged);const stamp=new Date().toISOString();const {error:writeError}=await this.client.from('formula_progress').upsert({user_id:userId,data:merged,updated_at:stamp},{onConflict:'user_id'});if(writeError)throw writeError;localStorage.setItem('formula-local-updated-at',stamp);const current=merged[activeSubject]||EMPTY_PROGRESS();progress=current;updateStats();
+   const status=$('#offlineStatus');if(status&&navigator.onLine){const label=status.querySelector('span:last-child');if(label)label.textContent='Progresso sincronizado';status.classList.remove('is-offline')}
+  }catch(error){console.warn('Fórmula: sincronização pendente.',error);const status=$('#offlineStatus');if(status){const label=status.querySelector('span:last-child');if(label)label.textContent=navigator.onLine?'Sincronização pendente':'Offline · salvo neste aparelho'}}finally{this.running=false}},
+};
+window.addEventListener('online',()=>window.formulaSync?.schedule());
 // Autenticação do Fórmula com Supabase Auth.
 // A chave publishable é própria para uso no navegador; nunca colocar a secret key aqui.
 (function setupSupabaseAuth(){
@@ -140,11 +162,15 @@ const savedSubject=localStorage.getItem('formula-subject')||'matematica';subject
  tabs.forEach(button=>button.addEventListener('click',()=>setTab(button.dataset.authTab)));
 
  if(!supabaseLib?.createClient){
+  // Se o app já foi autenticado neste aparelho, permite estudar offline usando o progresso local.
+  const cachedAuthKey=Object.keys(localStorage).find(key=>key.startsWith('sb-')&&key.endsWith('-auth-token'));
+  if(!navigator.onLine&&cachedAuthKey){enterApp();const status=$('#offlineStatus');if(status){const label=status.querySelector('span:last-child');if(label)label.textContent='Offline · progresso salvo neste aparelho';status.classList.add('is-offline')}window.addEventListener('online',()=>location.reload(),{once:true});return;}
   requireLogin();showFeedback('Não foi possível carregar o serviço de autenticação. Conecte-se à internet e atualize a página.','error');return;
  }
  client=supabaseLib.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{
   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
  });
+ window.formulaSupabaseClient=client;
 
  loginForm.addEventListener('submit',async event=>{
   event.preventDefault();
@@ -185,11 +211,11 @@ const savedSubject=localStorage.getItem('formula-subject')||'matematica';subject
  requireLogin();
  client.auth.getSession().then(({data,error})=>{
   if(error){showFeedback('Não foi possível verificar sua sessão. Tente atualizar a página.','error');return;}
-  if(data.session)enterApp();
+  if(data.session){enterApp();window.formulaSync.connect(client,data.session.user)}
  }).catch(()=>showFeedback('Não foi possível conectar ao Supabase. Verifique sua internet.','error'));
  client.auth.onAuthStateChange((event,session)=>{
-  if(session && ['SIGNED_IN','TOKEN_REFRESHED','INITIAL_SESSION','USER_UPDATED'].includes(event))enterApp();
-  if(event==='SIGNED_OUT')requireLogin();
+  if(session && ['SIGNED_IN','TOKEN_REFRESHED','INITIAL_SESSION','USER_UPDATED'].includes(event)){enterApp();window.formulaSync.connect(client,session.user)}
+  if(event==='SIGNED_OUT'){window.formulaSync.user=null;window.formulaSync.client=null;requireLogin();}
  });
 
  // O botão de perfil também oferece uma saída explícita da conta.

@@ -1,5 +1,5 @@
 /* Fórmula PWA — cache local de todos os arquivos necessários para estudar offline. */
-const CACHE_NAME = 'formula-pwa-v15';
+const CACHE_NAME = 'formula-pwa-v16';
 const CORE_FILES = [
   './',
   'index.html',
